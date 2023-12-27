@@ -29,20 +29,26 @@ LDFLAGS := $(LIB_PATH) $(LIBS) $(THIDR_LIBS)
 
 MKDIR := mkdir -p
 RM := rm -r
+ECHO := echo
+BEAR := bear --
 
+LSP_JSON := ./compile_commands.json
+LSP_CACHE := ./.cache
 
-.PHONY: run clean
+.PHONY: run clean build lsp
 
-all: run
+all: build
 
 run: $(BIN_DIR)/$(TARGET)
 	$(BIN_DIR)/$(TARGET)
 
+clean:
+	-@$(RM) $(BIN_DIR) $(OBJ_DIR)
+
+build: $(BIN_DIR)/$(TARGET)
+
 $(BIN_DIR)/$(TARGET): $(BIN_DIR) $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJS) $(LDFLAGS) $(CPPFLAGS)
-
-clean:
-	-@$(RM) $(BIN_DIR)/$(TARGET) $(OBJ_DIR)
 
 $(OBJ_DIR)/%.cpp.o: %.cpp
 	@$(MKDIR) $(dir $@)
@@ -50,4 +56,17 @@ $(OBJ_DIR)/%.cpp.o: %.cpp
 
 $(BIN_DIR):
 	@$(MKDIR) $(BIN_DIR)
+
+lsp: clean
+ifneq ("$(wildcard $(LSP_JSON))", "")
+	@$(RM) $(LSP_JSON)
+endif
+ifneq ("$(wildcard $(LSP_CACHE))", "")
+	@$(RM) $(LSP_CACHE)
+endif
+ifneq ("$(shell which bear)", "")
+	-@$(BEAR) "make"
+else
+	@$(ECHO) "Please install bear"
+endif
 
