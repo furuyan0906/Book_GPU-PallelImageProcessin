@@ -3,6 +3,13 @@
 #include "CudaDiffusion2DParameters.hpp"
 #include "CudaDiffusion2DProvider.cuh"
 
+#define USE_AS_NORMAL           (1 << 0)
+#define USE_SHARED_MEMORY       (1 << 1)
+#define USE_TEXTURE_MEMORY      (1 << 2)
+#define USE_PIXEL_BUFFER_OBJECT (1 << 3)
+
+#define USE_CUDA_MODE USE_SHARED_MEMORY
+
 namespace cuda
 {
     // ----- Public ------
@@ -73,9 +80,23 @@ namespace cuda
 
         auto grid = dim3(this->width / BlockDimX + 1, height / BlockDimY + 1);
         auto block = dim3(BlockDimX, BlockDimY);
+
+#if USE_CUDA_MODE == USE_SHARED_MEMORY
+        // シェアードメモリを使用
+        LaunchKernelWithSharedMemory <<< grid, block >>> (srcField, dstField, deviceResource, this->width, this->height, c0, c1, c2, this->max_density);
+#elif USE_CUDA_MODE == USE_TEXTURE_MEMORY
+        // テクスチャメモリを使用
+        // TODO
+#elif USE_CUDA_MODE == USE_PIXEL_BUFFER_OBJECT
+        // PBO(Pixel Buffer Object)を使用
+        // TODO
+#else
+        // シェアードメモリ×, テクスチャメモリ×, PBO(Pixel Buffer Object)×
         LaunchKernel <<< grid, block >>> (srcField, dstField, deviceResource, this->width, this->height, c0, c1, c2, this->max_density);
+#endif
 
         auto hostResource = this->hostGraphicalResource.get();
+
         ::cudaMemcpy(hostResource, deviceResource, this->width * this->height * sizeof(std::uint32_t), ::cudaMemcpyDeviceToHost);
 
         this->UpdateIndecies();

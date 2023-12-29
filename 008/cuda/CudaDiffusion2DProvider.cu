@@ -1,5 +1,6 @@
 #include "CudaDiffusion2DProvider.cuh"
 #include <cuda_device_runtime_api.h>
+#include "CudaDiffusion2DParameters.hpp"
 
 namespace cuda
 {
@@ -36,6 +37,67 @@ namespace cuda
 
         ConvertToRGB(&resource[index], dstField[index], max_density);
     }    
+
+    __global__ void LaunchKernelWithSharedMemory(
+            const float* const srcField,
+            float* const dstField,
+            std::uint32_t* resource,
+            std::uint64_t width,
+            std::uint64_t height,
+            float c0,
+            float c1,
+            float c2,
+            float max_density)
+    {
+        __shared__ float fs[BlockDimY + 2][BlockDimX + 2];
+
+        auto ky = blockDim.y * blockIdx.y + threadIdx.y;
+        auto kx = blockDim.x * blockIdx.x + threadIdx.x;
+
+        if ((kx >= width) || (ky >= height))
+        {
+            return ;
+        }
+
+        auto index = width * ky + kx;
+
+        // 上下左右それぞれに1つ広げた領域をシェアードメモリに確保したため, インデックスは1始まり
+        auto sx = threadIdx.x + 1;
+        auto sy = threadIdx.y + 1;
+
+        auto fc = srcField[index];
+        fs[sy][sx] = fc;
+
+        // ブロック左端の時
+        if (threadIdx.x == 0)
+        {
+            fs[sy][0] = (kx == 0) ? fc : srcField[index - 1];
+        }
+
+        // ブロック右端の時
+        if (threadIdx.x >= (blockDim.x - 1))
+        {
+            fs[sy][blockDim.x + 1] = (kx >= (width - 1)) ? fc : srcField[index + 1];
+        }
+
+        // ブロック下端の時
+        if (threadIdx.y == 0)
+        {
+            fs[0][sx] = (ky == 0) ? fc : srcField[index - width];
+        }
+
+        // ブロック上端の時
+        if (threadIdx.y >= (blockDim.y - 1))
+        {
+            fs[blockDim.y + 1][sx] = (ky >= (height - 1)) ? fc : srcField[index + width];
+        }
+
+        __syncthreads();
+
+        dstField[index] = c0 * (fs[sy][sx + 1] + fs[sy][sx - 1]) + c1 * (fs[sy + 1][sx] + fs[sy - 1][sx]) + c2 * fs[sy][sx];
+
+        ConvertToRGB(&resource[index], dstField[index], max_density);
+    }
     
     __device__ void ConvertToRGB(std::uint32_t* dst, float src, float src_max)
     {
