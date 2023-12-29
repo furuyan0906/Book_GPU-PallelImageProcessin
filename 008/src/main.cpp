@@ -6,6 +6,7 @@
 #include <GL/glew.h>
 #include <GL/freeglut.h>
 #include "CpuDiffusion2D.hpp"
+#include "CudaDiffusion2D.hpp"
 
 
 static constexpr std::uint64_t init_pos_x = 128;
@@ -124,8 +125,19 @@ void cleanup(void)
     textureId = 0;
 }
 
+#define USE_CUDA
+
 void initKernel()
 {
+#ifdef USE_CUDA
+    cuda::Initialize(
+            grid_width,
+            grid_height,
+            kappa,
+            max_density,
+            std::pair<float, float>(x_max, y_max),
+            std::pair<float, float>(x_min, y_min));
+#else
     cpu::Initialize(
             grid_width,
             grid_height,
@@ -133,10 +145,15 @@ void initKernel()
             max_density,
             std::pair<float, float>(x_max, y_max),
             std::pair<float, float>(x_min, y_min));
+#endif
 }
 
 std::uint32_t* runKernel(void)
 {
+#ifdef USE_CUDA
+    return cuda::Launch(dt, dx, dy);
+#else
     return cpu::Launch(dt, dx, dy);
+#endif
 }
 
