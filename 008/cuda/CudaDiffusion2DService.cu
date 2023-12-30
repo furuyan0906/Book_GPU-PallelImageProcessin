@@ -1,5 +1,7 @@
 #include "CudaDiffusion2DService.cuh"
 #include <vector>
+#include <iostream>
+#include <stdexcept>
 #include "CudaDiffusion2DParameters.hpp"
 #include "CudaDiffusion2DProvider.cuh"
 
@@ -8,7 +10,7 @@
 #define USE_TEXTURE_MEMORY      (1 << 2)
 #define USE_PIXEL_BUFFER_OBJECT (1 << 3)
 
-#define USE_CUDA_MODE USE_SHARED_MEMORY
+#define USE_CUDA_MODE USE_TEXTURE_MEMORY
 
 namespace cuda
 {
@@ -18,7 +20,7 @@ namespace cuda
             std::uint64_t width,
             std::uint64_t height, 
             float kappa,
-            float max_density) noexcept
+            float max_density)
         : Diffusion2DServiceBase(width, height, kappa, max_density)
     {
         this->fields[0] = cuda::make_shared<float[]>(width * height);
@@ -28,10 +30,20 @@ namespace cuda
 
         this->deviceGraphicalResource = cuda::make_shared<std::uint32_t[]>(width * height);
         this->hostGraphicalResource = std::shared_ptr<std::uint32_t[]>(new std::uint32_t[width * height]);
+
+#if USE_CUDA_MODE == USE_TEXTURE_MEMORY
+        if (!this->TryCreateCudaTextureObjects())
+        {
+            throw std::runtime_error("Failed to create texture objects");
+        }
+#endif
     }
     
-    CudaDiffusion2DService::~CudaDiffusion2DService() noexcept
+    CudaDiffusion2DService::~CudaDiffusion2DService()
     {
+#if USE_CUDA_MODE == USE_TEXTURE_MEMORY
+        this->DisposeCudaTextureObjects();
+#endif
     }
     
     void CudaDiffusion2DService::Initialize(
@@ -82,16 +94,14 @@ namespace cuda
         auto block = dim3(BlockDimX, BlockDimY);
 
 #if USE_CUDA_MODE == USE_SHARED_MEMORY
-        // シェアードメモリを使用
         LaunchKernelWithSharedMemory <<< grid, block >>> (srcField, dstField, deviceResource, this->width, this->height, c0, c1, c2, this->max_density);
 #elif USE_CUDA_MODE == USE_TEXTURE_MEMORY
-        // テクスチャメモリを使用
-        // TODO
+        const auto textureSource = this->textureSources[this->srcFieldIndex];
+        LaunchKernelWithTextureMemory <<< grid, block >>> (textureSource, dstField, deviceResource, this->width, this->height, c0, c1, c2, this->max_density);
 #elif USE_CUDA_MODE == USE_PIXEL_BUFFER_OBJECT
-        // PBO(Pixel Buffer Object)を使用
         // TODO
 #else
-        // シェアードメモリ×, テクスチャメモリ×, PBO(Pixel Buffer Object)×
+        // シェアードメモリ, テクスチャメモリ, PBO(Pixel Buffer Object)のいずれも使用しない
         LaunchKernel <<< grid, block >>> (srcField, dstField, deviceResource, this->width, this->height, c0, c1, c2, this->max_density);
 #endif
 
@@ -110,6 +120,51 @@ namespace cuda
     {
         this->srcFieldIndex = this->dstFieldIndex;
         this->dstFieldIndex = (this->srcFieldIndex + 1) % NFields;
+    }
+
+    bool CudaDiffusion2DService::TryCreateCudaTextureObjects()
+    {
+        try
+        {
+            auto channelDesc = ::cudaCreateChannelDesc(32, 0, 0, 0, ::cudaChannelFormatKindFloat);
+
+            for (int i = 0; i < NFields; ++i)
+            {
+                ::cudaResourceDesc resourceDesc;
+                {
+                    memset(&resourceDesc, 0, sizeof(::cudaResourceDesc));
+                    resourceDesc.resType = ::cudaResourceTypeLinear;
+                    resourceDesc.res.linear.devPtr = this->fields[i].get();
+                    resourceDesc.res.linear.desc = channelDesc;
+                    resourceDesc.res.linear.sizeInBytes = sizeof(float);
+                }
+
+                ::cudaTextureDesc textureDesc;
+                {
+                    memset(&textureDesc, 0, sizeof(::cudaTextureDesc));
+                    textureDesc.filterMode = ::cudaFilterModeLinear;
+                    textureDesc.readMode = ::cudaReadModeElementType;
+                    textureDesc.normalizedCoords = 0;
+                }
+
+                CHECK_CUDA_ERROR(::cudaCreateTextureObject(&(this->textureSources[i]), &resourceDesc, &textureDesc, nullptr));
+            }
+
+            return true;
+        }
+        catch (std::exception& e)
+        {
+            std::cout << "[ErrorReason] " << e.what() << std::endl;
+            return false;
+        }
+    }
+
+    void CudaDiffusion2DService::DisposeCudaTextureObjects()
+    {
+        for (int i = 0; i < NFields; ++i)
+        {
+            CHECK_CUDA_ERROR(::cudaDestroyTextureObject(this->textureSources[i]));
+        }
     }
 };
 

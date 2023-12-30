@@ -1,5 +1,6 @@
 #include "CudaDiffusion2DProvider.cuh"
 #include <cuda_device_runtime_api.h>
+#include <texture_indirect_functions.h>
 #include "CudaDiffusion2DParameters.hpp"
 
 namespace cuda
@@ -95,6 +96,38 @@ namespace cuda
         __syncthreads();
 
         dstField[index] = c0 * (fs[sy][sx + 1] + fs[sy][sx - 1]) + c1 * (fs[sy + 1][sx] + fs[sy - 1][sx]) + c2 * fs[sy][sx];
+
+        ConvertToRGB(&resource[index], dstField[index], max_density);
+    }
+
+    __global__ void LaunchKernelWithTextureMemory(
+            const cudaTextureObject_t& textureSource,
+            float* dstField,
+            std::uint32_t* resource,
+            std::uint64_t width,
+            std::uint64_t height,
+            float c0,
+            float c1,
+            float c2,
+            float max_density)
+    {
+        auto ky = blockDim.y * blockIdx.y + threadIdx.y;
+        auto kx = blockDim.x * blockIdx.x + threadIdx.x;
+
+        if ((kx >= width) || (ky >= height))
+        {
+            return ;
+        }
+
+        auto index = width * ky + kx;
+
+        auto fc = ::tex1Dfetch<float>(textureSource, index);
+        auto fl = kx == 0 ? fc : ::tex1Dfetch<float>(textureSource, index - 1);
+        auto fr = kx >= (width - 1) ? fc : ::tex1Dfetch<float>(textureSource, index + 1);
+        auto fd = ky == 0 ? fc : ::tex1Dfetch<float>(textureSource, index - width);
+        auto ft = ky >= (height - 1) ? fc : ::tex1Dfetch<float>(textureSource, index + width);
+
+        dstField[index] = c0 * (fr + fl) + c1 * (ft + fd) + c2 * fc;
 
         ConvertToRGB(&resource[index], dstField[index], max_density);
     }
