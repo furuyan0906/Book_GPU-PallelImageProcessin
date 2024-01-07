@@ -20,10 +20,10 @@ CUDA_SRCS := $(wildcard $(CUDA_DIR)/*.cu)
 OBJS := $(SRCS:%=$(OBJ_DIR)/%.o)
 CUDA_OBJS := $(CUDA_SRCS:%=$(OBJ_DIR)/%.o)
 
-INCLUDE := -I$(SRC_DIR) -I$(CUDA_DIR) -I$(UTIL_DIR) -I$(INC_DIR) -I${HOME}/Library/include
+INCLUDE := -I$(SRC_DIR) -I$(CUDA_DIR) -I$(UTIL_DIR) -I$(COMMON_DIR) -I$(INC_DIR) -I${HOME}/Library/include
 
 LIBS :=
-THIDR_LIBS := -lglut -lGL
+THIDR_LIBS := -lglut -lGL -lGLEW
 LIB_PATH := -L${HOME}/Library/lib
 
 DEFINES :=
