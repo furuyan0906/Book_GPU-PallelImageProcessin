@@ -136,7 +136,7 @@ namespace cuda
                     resourceDesc.resType = ::cudaResourceTypeLinear;
                     resourceDesc.res.linear.devPtr = this->fields[i].get();
                     resourceDesc.res.linear.desc = channelDesc;
-                    resourceDesc.res.linear.sizeInBytes = sizeof(float);
+                    resourceDesc.res.linear.sizeInBytes = this->width * this->height * sizeof(float);
                 }
 
                 ::cudaTextureDesc textureDesc;
@@ -144,7 +144,6 @@ namespace cuda
                     memset(&textureDesc, 0, sizeof(::cudaTextureDesc));
                     textureDesc.filterMode = ::cudaFilterModeLinear;
                     textureDesc.readMode = ::cudaReadModeElementType;
-                    textureDesc.normalizedCoords = 0;
                 }
 
                 CHECK_CUDA_ERROR(::cudaCreateTextureObject(&(this->textureSources[i]), &resourceDesc, &textureDesc, nullptr));

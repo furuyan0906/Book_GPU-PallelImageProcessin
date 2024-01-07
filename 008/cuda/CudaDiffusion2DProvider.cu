@@ -100,6 +100,7 @@ namespace cuda
         ConvertToRGB(&resource[index], dstField[index], max_density);
     }
 
+    // TODO: 正常に動作するようにする
     __global__ void LaunchKernelWithTextureMemory(
             const cudaTextureObject_t& textureSource,
             float* dstField,
